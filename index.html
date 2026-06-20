@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>粉色玫瑰花束 - 3D 粒子动态模型</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0a0f;
+    font-family: 'Georgia', 'Times New Roman', 'PingFang SC', 'Microsoft YaHei', serif;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: pan-x pan-y pinch-zoom;
+  }
+  canvas { display: block; }
+
+  .overlay {
+    position: fixed; top: 0; left: 0; width: 100%;
+    pointer-events: none; z-index: 10;
+  }
+
+  .title {
+    position: fixed; top: 30px; width: 100%; text-align: center;
+    pointer-events: none; z-index: 10;
+  }
+  .title h1 {
+    display: inline-block;
+    color: #f8bbd0;
+    font-size: clamp(18px, 4vw, 32px);
+    font-weight: 400;
+    letter-spacing: 0.15em;
+    text-shadow: 0 0 30px rgba(233, 30, 99, 0.5), 0 0 60px rgba(233, 30, 99, 0.3);
+    animation: titleGlow 3s ease-in-out infinite alternate;
+  }
+  @keyframes titleGlow {
+    from { text-shadow: 0 0 20px rgba(233, 30, 99, 0.4), 0 0 40px rgba(233, 30, 99, 0.2); }
+    to   { text-shadow: 0 0 35px rgba(233, 30, 99, 0.7), 0 0 80px rgba(233, 30, 99, 0.4); }
+  }
+
+  .hint {
+    position: fixed; bottom: 40px; width: 100%; text-align: center;
+    pointer-events: none; z-index: 10;
+  }
+  .hint span {
+    color: rgba(248, 187, 208, 0.7);
+    font-size: clamp(11px, 2.5vw, 14px);
+    letter-spacing: 0.1em;
+    animation: fadeHint 4s ease-in-out forwards;
+  }
+  @keyframes fadeHint {
+    0%   { opacity: 0; }
+    30%  { opacity: 1; }
+    80%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* Vignette */
+  .vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 5;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(5, 5, 15, 0.6) 100%);
+  }
+</style>
+</head>
+<body>
+<div class="vignette"></div>
+<div class="title"><h1>粉色玫瑰花束</h1></div>
+<div class="hint"><span>✨ 拖拽旋转 · 滚轮缩放 ✨</span></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─────────────────────────────────────
+// Scene setup
+// ─────────────────────────────────────
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.00008);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 30);
+camera.position.set(0, 0.6, 6.5);
+camera.lookAt(0, 0.2, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// ─────────────────────────────────────
+// Lighting
+// ─────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x2a1a2e, 1.2);
+scene.add(ambientLight);
+
+const keyLight = new THREE.DirectionalLight(0xffeedd, 4.5);
+keyLight.position.set(5, 8, 5);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.width = 1024;
+keyLight.shadow.mapSize.height = 1024;
+keyLight.shadow.camera.near = 0.5;
+keyLight.shadow.camera.far = 30;
+keyLight.shadow.camera.left = -5;
+keyLight.shadow.camera.right = 5;
+keyLight.shadow.camera.top = 5;
+keyLight.shadow.camera.bottom = -5;
+keyLight.shadow.bias = -0.0001;
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0x8899cc, 1.8);
+fillLight.position.set(-3, 1, -2);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffcccc, 2.5);
+rimLight.position.set(0, 0.5, -5);
+scene.add(rimLight);
+
+const topLight = new THREE.PointLight(0xffd0d0, 15, 8, 1.5);
+topLight.position.set(0, 2.5, 0);
+scene.add(topLight);
+
+// ─────────────────────────────────────
+// Controls
+// ─────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.15, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.4;
+controls.minDistance = 3;
+controls.maxDistance = 12;
+controls.maxPolarAngle = Math.PI * 0.65;
+controls.minPolarAngle = Math.PI * 0.2;
+controls.update();
+
+// ─────────────────────────────────────
+// Sparkle texture (canvas)
+// ─────────────────────────────────────
+function createSparkleTexture() {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.05, 'rgba(255,240,245,0.9)');
+  gradient.addColorStop(0.2, 'rgba(255,200,220,0.5)');
+  gradient.addColorStop(0.5, 'rgba(255,150,180,0.1)');
+  gradient.addColorStop(1, 'rgba(255,100,150,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+const sparkleTex = createSparkleTexture();
+
+// ─────────────────────────────────────
+// Petal geometry factory
+// ─────────────────────────────────────
+function createPetalGeometry({
+  width = 0.35,
+  height = 0.75,
+  curlOut = 0.25,
+  cupDepth = 0.06,
+  segW = 8,
+  segH = 10,
+  hueShift = 0,
+}) {
+  const rows = segH + 1;
+  const cols = segW + 1;
+  const vertexCount = rows * cols;
+  const positions = new Float32Array(vertexCount * 3);
+  const colors = new Float32Array(vertexCount * 3);
+
+  const colorBase = new THREE.Color().setHSL(0.93 + hueShift * 0.04, 0.75, 0.35);
+  const colorMid  = new THREE.Color().setHSL(0.94 + hueShift * 0.03, 0.70, 0.55);
+  const colorTip  = new THREE.Color().setHSL(0.95 + hueShift * 0.02, 0.55, 0.82);
+
+  for (let i = 0; i < rows; i++) {
+    const u = i / segH;
+
+    // Petal outline
+    const outline = Math.sin(u * Math.PI) ** 0.62;
+    const halfW = outline * width * 0.5;
+
+    for (let j = 0; j < cols; j++) {
+      const vNorm = (j / segW) * 2 - 1; // -1..1
+      const idx = (i * cols + j) * 3;
+
+      const x = vNorm * halfW;
+      const y = u * height;
+
+      // 3D curvature
+      const edgeFactor = vNorm * vNorm;
+      const z = Math.pow(u, 1.7) * curlOut + edgeFactor * u * cupDepth;
+
+      positions[idx]     = x;
+      positions[idx + 1] = y;
+      positions[idx + 2] = z;
+
+      // Color: base → tip gradient, slight edge brightening near top
+      const t = u;
+      let color;
+      if (t < 0.25) {
+        color = colorBase.clone().lerp(colorMid, t / 0.25);
+      } else {
+        color = colorMid.clone().lerp(colorTip, (t - 0.25) / 0.75);
+      }
+      // Brighten edges slightly
+      const edgeBright = 1 + edgeFactor * 0.15 * t;
+      color.r = Math.min(1, color.r * edgeBright);
+      color.g = Math.min(1, color.g * edgeBright);
+      color.b = Math.min(1, color.b * edgeBright);
+
+      colors[idx]     = color.r;
+      colors[idx + 1] = color.g;
+      colors[idx + 2] = color.b;
+    }
+  }
+
+  // Indices
+  const indices = [];
+  for (let i = 0; i < segH; i++) {
+    for (let j = 0; j < segW; j++) {
+      const a = i * cols + j;
+      const b = a + 1;
+      const c = a + cols;
+      const d = c + 1;
+      indices.push(a, b, d);
+      indices.push(a, d, c);
+    }
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geom.setIndex(indices);
+  geom.computeVertexNormals();
+  return geom;
+}
+
+// ─────────────────────────────────────
+// Single rose
+// ─────────────────────────────────────
+function createRose({
+  scale = 1.0,
+  openness = 1.0,
+  hueShift = 0,
+}) {
+  const group = new THREE.Group();
+  const castShadow = true;
+  const receiveShadow = true;
+
+  // Layer definitions: inner (bud) → outer (open)
+  const layers = [
+    { count: 5,  radius: 0.015, height: 0.09, tilt: 0.10, petalW: 0.20, petalH: 0.40, curl: 0.08, cup: 0.02 },
+    { count: 7,  radius: 0.030, height: 0.07, tilt: 0.25, petalW: 0.26, petalH: 0.52, curl: 0.14, cup: 0.04 },
+    { count: 9,  radius: 0.050, height: 0.04, tilt: 0.50, petalW: 0.32, petalH: 0.64, curl: 0.22, cup: 0.06 },
+    { count: 11, radius: 0.075, height: 0.01, tilt: 0.78, petalW: 0.36, petalH: 0.72, curl: 0.30, cup: 0.08 },
+  ];
+
+  for (let li = 0; li < layers.length; li++) {
+    const layer = layers[li];
+    const tilt = layer.tilt * openness;
+    const angleOffset = li * 0.35; // spiral effect
+
+    for (let i = 0; i < layer.count; i++) {
+      const angle = (i / layer.count) * Math.PI * 2 + angleOffset;
+      const rad = layer.radius * scale;
+
+      const geom = createPetalGeometry({
+        width: layer.petalW * scale,
+        height: layer.petalH * scale,
+        curlOut: layer.curl * openness,
+        cupDepth: layer.cup * openness,
+        segW: 7,
+        segH: 9,
+        hueShift,
+      });
+
+      const mat = new THREE.MeshPhongMaterial({
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        shininess: 25,
+        specular: new THREE.Color(0x221111),
+      });
+
+      const petal = new THREE.Mesh(geom, mat);
+      petal.castShadow = castShadow;
+      petal.receiveShadow = receiveShadow;
+
+      petal.position.set(
+        Math.cos(angle) * rad,
+        layer.height * scale,
+        Math.sin(angle) * rad
+      );
+      petal.rotation.order = 'YXZ';
+      petal.rotation.y = -angle;
+      petal.rotation.x = -tilt;
+      // Slight random variation
+      petal.rotation.z = (Math.random() - 0.5) * 0.08;
+
+      group.add(petal);
+    }
+  }
+
+  // Calyx (green sepals at base)
+  const sepalGeom = createPetalGeometry({
+    width: 0.12 * scale,
+    height: 0.25 * scale,
+    curlOut: -0.1,
+    cupDepth: 0.02,
+    segW: 4,
+    segH: 5,
+    hueShift: 0.33, // green
+  });
+  // Recolor sepals green
+  const sepalColors = sepalGeom.attributes.color;
+  for (let k = 0; k < sepalColors.count; k++) {
+    const t = k / sepalColors.count;
+    const green = new THREE.Color().setHSL(0.25 + t * 0.05, 0.5, 0.2 + t * 0.15);
+    sepalColors.setXYZ(k, green.r, green.g, green.b);
+  }
+
+  const sepalMat = new THREE.MeshPhongMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    shininess: 10,
+  });
+
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2 + 0.3;
+    const sepal = new THREE.Mesh(sepalGeom, sepalMat);
+    sepal.position.set(
+      Math.cos(angle) * 0.04 * scale,
+      -0.02 * scale,
+      Math.sin(angle) * 0.04 * scale
+    );
+    sepal.rotation.order = 'YXZ';
+    sepal.rotation.y = -angle;
+    sepal.rotation.x = 0.6;
+    sepal.rotation.z = (Math.random() - 0.5) * 0.2;
+    sepal.scale.set(0.5, 0.5, 0.5);
+    sepal.castShadow = true;
+    group.add(sepal);
+  }
+
+  return group;
+}
+
+// ─────────────────────────────────────
+// Stem
+// ─────────────────────────────────────
+function createStem(start, end, thickness = 0.03) {
+  const mid = new THREE.Vector3(
+    (start.x + end.x) * 0.5 + (Math.random() - 0.5) * 0.3,
+    (start.y + end.y) * 0.5,
+    (start.z + end.z) * 0.5 + (Math.random() - 0.5) * 0.3
+  );
+  const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+  const geom = new THREE.TubeGeometry(curve, 20, thickness, 8, false);
+  const mat = new THREE.MeshPhongMaterial({
+    color: new THREE.Color().setHSL(0.22, 0.5, 0.22),
+    shininess: 15,
+    specular: 0x111111,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// ─────────────────────────────────────
+// Leaf
+// ─────────────────────────────────────
+function createLeaf(size = 0.4) {
+  const shape = new THREE.Shape();
+  const w = size * 0.25;
+  const h = size;
+  shape.moveTo(0, -h * 0.1);
+  shape.bezierCurveTo(w * 0.8, h * 0.1, w * 0.6, h * 0.5, 0, h * 0.85);
+  shape.bezierCurveTo(-w * 0.6, h * 0.5, -w * 0.8, h * 0.1, 0, -h * 0.1);
+  const geom = new THREE.ShapeGeometry(shape, 6, 8);
+
+  // Add slight curvature
+  const pos = geom.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const t = (y + h * 0.1) / (h * 0.95);
+    pos.setZ(i, Math.abs(x) * t * 0.3);
+  }
+  geom.computeVertexNormals();
+
+  const mat = new THREE.MeshPhongMaterial({
+    color: new THREE.Color().setHSL(0.25, 0.5, 0.25 + Math.random() * 0.1),
+    side: THREE.DoubleSide,
+    shininess: 10,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.castShadow = true;
+  return mesh;
+}
+
+// ─────────────────────────────────────
+// Wrapping (florist paper)
+// ─────────────────────────────────────
+function createWrapping() {
+  const group = new THREE.Group();
+
+  // Main wrapping cone
+  const coneGeom = new THREE.CylinderGeometry(0.15, 0.38, 1.05, 24, 1, true);
+  const pos = coneGeom.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const y = pos.getY(i);
+    const t = (y + 0.525) / 1.05; // 0 at bottom, 1 at top
+    const noise = (Math.sin(x * 12) * Math.cos(z * 12) * 0.03 + (Math.random() - 0.5) * 0.02) * t;
+    const angle = Math.atan2(z, x);
+    const dist = Math.sqrt(x * x + z * z);
+    const flaredDist = dist + (1 - t) * 0.04;
+    pos.setX(i, Math.cos(angle) * flaredDist + noise * Math.cos(angle));
+    pos.setZ(i, Math.sin(angle) * flaredDist + noise * Math.sin(angle));
+  }
+  coneGeom.computeVertexNormals();
+  const coneMat = new THREE.MeshPhongMaterial({
+    color: 0xd4c5b2,
+    side: THREE.DoubleSide,
+    shininess: 12,
+    specular: 0x111111,
+  });
+  const cone = new THREE.Mesh(coneGeom, coneMat);
+  cone.position.y = -1.35;
+  cone.castShadow = true;
+  cone.receiveShadow = true;
+  group.add(cone);
+
+  // Ribbon
+  const ribbonGeom = new THREE.TorusGeometry(0.39, 0.03, 8, 24);
+  const ribbonMat = new THREE.MeshPhongMaterial({
+    color: 0xf8e8e0,
+    shininess: 40,
+    specular: 0x442222,
+  });
+  const ribbon = new THREE.Mesh(ribbonGeom, ribbonMat);
+  ribbon.position.y = -0.95;
+  ribbon.rotation.x = Math.PI / 2;
+  ribbon.castShadow = true;
+  group.add(ribbon);
+
+  // Ribbon bow loops
+  for (let s = -1; s <= 1; s += 2) {
+    const bowGeom = new THREE.TorusGeometry(0.12, 0.025, 6, 12, Math.PI);
+    const bow = new THREE.Mesh(bowGeom, ribbonMat);
+    bow.position.set(s * 0.08, -0.85, 0.2);
+    bow.rotation.set(Math.PI * 0.5, s * 0.6, s * 0.3);
+    bow.castShadow = true;
+    group.add(bow);
+  }
+
+  // Ribbon tails
+  for (let s = -1; s <= 1; s += 2) {
+    const tailShape = new THREE.Shape();
+    tailShape.moveTo(0, 0);
+    tailShape.bezierCurveTo(s * 0.06, -0.15, s * 0.08, -0.3, s * 0.02, -0.45);
+    tailShape.bezierCurveTo(s * 0.01, -0.5, 0, -0.5, 0, -0.48);
+    tailShape.bezierCurveTo(-s * 0.01, -0.3, -s * 0.04, -0.15, 0, 0);
+    const tailGeom = new THREE.ShapeGeometry(tailShape, 2, 6);
+    tailGeom.computeVertexNormals();
+    const tail = new THREE.Mesh(tailGeom, ribbonMat);
+    tail.position.set(s * 0.04, -0.88, 0.15);
+    tail.rotation.set(0.3, s * 0.5, 0);
+    tail.scale.set(1.2, 1.2, 1.2);
+    tail.castShadow = true;
+    group.add(tail);
+  }
+
+  return group;
+}
+
+// ─────────────────────────────────────
+// Baby's breath particles
+// ─────────────────────────────────────
+function createBabysBreath() {
+  const count = 400;
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    // Scattered around roses
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI * 0.7;
+    const radius = 0.5 + Math.random() * 1.2;
+    positions[i * 3]     = Math.cos(theta) * Math.cos(phi) * radius;
+    positions[i * 3 + 1] = 0.2 + Math.random() * 1.2;
+    positions[i * 3 + 2] = Math.sin(theta) * Math.cos(phi) * radius;
+    sizes[i] = 0.015 + Math.random() * 0.04;
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geom.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const mat = new THREE.PointsMaterial({
+    map: sparkleTex,
+    color: 0xfff5f8,
+    size: 0.06,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.7,
+  });
+
+  return new THREE.Points(geom, mat);
+}
+
+// ─────────────────────────────────────
+// Ambient sparkle particles
+// ─────────────────────────────────────
+function createAmbientSparkles() {
+  const count = 200;
+  const positions = new Float32Array(count * 3);
+  const speeds = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    positions[i * 3]     = (Math.random() - 0.5) * 8;
+    positions[i * 3 + 1] = (Math.random() - 0.5) * 8;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 6;
+    speeds[i] = 0.2 + Math.random() * 0.8;
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geom.userData = { speeds, count };
+
+  const mat = new THREE.PointsMaterial({
+    map: sparkleTex,
+    color: 0xffd0e0,
+    size: 0.04,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.5,
+  });
+
+  return new THREE.Points(geom, mat);
+}
+
+// ─────────────────────────────────────
+// Ground shadow disc
+// ─────────────────────────────────────
+function createGroundShadow() {
+  const geom = new THREE.PlaneGeometry(3, 3);
+  const mat = new THREE.ShadowMaterial({ opacity: 0.25 });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = -1.9;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// ─────────────────────────────────────
+// Build bouquet
+// ─────────────────────────────────────
+const bouquet = new THREE.Group();
+scene.add(bouquet);
+
+// Rose positions (dome arrangement)
+const roseDefs = [
+  { x: 0,    z: 0,    y: 0.15, scale: 1.05, openness: 0.95, hue: 0 },
+  { x: 0.55, z: 0.25, y: -0.05, scale: 0.95, openness: 1.0,  hue: 1 },
+  { x: -0.5, z: -0.3, y: -0.02, scale: 0.90, openness: 0.85, hue: -1 },
+  { x: 0.1,  z: -0.65, y: -0.08, scale: 0.92, openness: 0.9,  hue: 2 },
+  { x: -0.15, z: 0.6,  y: -0.04, scale: 0.88, openness: 1.05, hue: -2 },
+  { x: 0.6,  z: -0.4, y: -0.1,  scale: 0.85, openness: 0.8,  hue: 0 },
+  { x: -0.6, z: 0.15, y: -0.06, scale: 0.90, openness: 0.92, hue: 1 },
+];
+
+const stemBottom = new THREE.Vector3(0, -0.9, 0);
+const roseGroups = [];
+
+roseDefs.forEach((def) => {
+  const rose = createRose({
+    scale: def.scale,
+    openness: def.openness,
+    hueShift: def.hue,
+  });
+  rose.position.set(def.x, def.y, def.z);
+  rose.rotation.x = (Math.random() - 0.5) * 0.15;
+  rose.rotation.z = (Math.random() - 0.5) * 0.15;
+  bouquet.add(rose);
+  roseGroups.push({ mesh: rose, pos: new THREE.Vector3(def.x, def.y, def.z) });
+
+  // Stem
+  const stemStart = new THREE.Vector3(def.x, def.y - 0.15, def.z);
+  const stem = createStem(stemStart, stemBottom, 0.025 + Math.random() * 0.015);
+  bouquet.add(stem);
+
+  // Leaves on stem
+  const leafCount = 1 + Math.floor(Math.random() * 2);
+  for (let l = 0; l < leafCount; l++) {
+    const t = 0.2 + Math.random() * 0.5;
+    const leafPos = new THREE.Vector3().lerpVectors(stemStart, stemBottom, t);
+    leafPos.x += (Math.random() - 0.5) * 0.15;
+    leafPos.z += (Math.random() - 0.5) * 0.15;
+    const leaf = createLeaf(0.2 + Math.random() * 0.25);
+    leaf.position.copy(leafPos);
+    leaf.rotation.set(
+      (Math.random() - 0.5) * 0.8,
+      Math.random() * Math.PI * 2,
+      (Math.random() - 0.5) * 0.6
+    );
+    bouquet.add(leaf);
+  }
+});
+
+// Wrapping
+const wrapping = createWrapping();
+bouquet.add(wrapping);
+
+// Baby's breath
+const babysBreath = createBabysBreath();
+bouquet.add(babysBreath);
+
+// Ambient sparkles
+const sparkles = createAmbientSparkles();
+scene.add(sparkles);
+
+// Ground shadow
+const groundShadow = createGroundShadow();
+scene.add(groundShadow);
+
+// ─────────────────────────────────────
+// Animation
+// ─────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate(timestamp) {
+  requestAnimationFrame(animate);
+
+  const t = timestamp * 0.001;
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  controls.update();
+
+  // Gentle bouquet float
+  bouquet.position.y = Math.sin(t * 0.5) * 0.08;
+  bouquet.rotation.y += Math.sin(t * 0.3) * 0.0002;
+
+  // Animate sparkles
+  const sparklePos = sparkles.geometry.attributes.position;
+  const sparkleData = sparkles.geometry.userData;
+  for (let i = 0; i < sparkleData.count; i++) {
+    let y = sparklePos.getY(i);
+    y += sparkleData.speeds[i] * dt * 0.3;
+    if (y > 4) y = -4;
+    sparklePos.setY(i, y);
+    // Twinkle
+    const twinkle = Math.sin(t * 3 + i) * 0.5 + 0.5;
+    sparklePos.setX(i, sparklePos.getX(i) + Math.sin(t * 2 + i * 1.7) * 0.002);
+  }
+  sparkles.geometry.attributes.position.needsUpdate = true;
+
+  // Animate baby's breath gently
+  babysBreath.rotation.y += dt * 0.15;
+
+  // Petal gentle sway
+  roseGroups.forEach(({ mesh }, idx) => {
+    const sway = Math.sin(t * 1.2 + idx * 1.3) * 0.03;
+    mesh.rotation.z += sway * 0.1;
+  });
+
+  renderer.render(scene, camera);
+}
+
+// ─────────────────────────────────────
+// Resize handler
+// ─────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─────────────────────────────────────
+// Start
+// ─────────────────────────────────────
+// Initial camera adjustment for mobile
+if (window.innerWidth < 768) {
+  camera.position.set(0, 0.5, 7.5);
+  controls.target.set(0, 0.1, 0);
+  controls.autoRotateSpeed = 0.6;
+  controls.update();
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
