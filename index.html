@@ -32,14 +32,18 @@
 
 <script type="importmap">
 {"imports":{
-  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
-  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 }}
 </script>
 
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+window.addEventListener('error', (e) => {
+  document.body.innerHTML += `<div style="position:fixed;top:0;left:0;right:0;background:#c62828;color:#fff;padding:12px;z-index:999;font-size:13px;text-align:center">Error: ${e.message}</div>`;
+});
 
 // ── Scene ──
 const scene = new THREE.Scene();
@@ -72,9 +76,17 @@ sun.shadow.camera.top=7; sun.shadow.camera.bottom=-7;
 sun.shadow.bias=-0.0002; sun.shadow.normalBias=0.02;
 scene.add(sun);
 
-scene.add(new THREE.DirectionalLight(0x8899cc, 2).set(-4,2,-2));
-scene.add(new THREE.DirectionalLight(0xffcccc, 3).set(0,1,-5));
-scene.add(new THREE.PointLight(0xffaabb, 22, 7, 1.5).set(0,1.5,0.5));
+const fillLight = new THREE.DirectionalLight(0x8899cc, 2);
+fillLight.position.set(-4, 2, -2);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffcccc, 3);
+rimLight.position.set(0, 1, -5);
+scene.add(rimLight);
+
+const glowLight = new THREE.PointLight(0xffaabb, 22, 7, 1.5);
+glowLight.position.set(0, 1.5, 0.5);
+scene.add(glowLight);
 
 // ── Controls ──
 const ctrl = new OrbitControls(cam, renderer.domElement);
